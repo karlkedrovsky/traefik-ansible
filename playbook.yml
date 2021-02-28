@@ -1,0 +1,64 @@
+---
+- hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    htpasswd_file: '{{ ansible_env.HOME }}/docker/proxy/htpasswd'
+  vars_files:
+    - secrets.yml
+  tasks:
+    - name: set up docker network for proxy server
+      docker_network:
+        name: web
+    - name: create directory for global proxy container
+      file:
+        path: '{{ ansible_env.HOME }}/docker/proxy'
+        state: directory
+    - name: copy proxy config file to the server
+      copy:
+        src: docker/proxy/traefik.toml
+        dest: '{{ ansible_env.HOME }}/docker/proxy/traefik.toml'
+    - name: set traefik dashboard user and password
+      htpasswd:
+        path: '{{ htpasswd_file }}'
+        name: '{{ basic_auth_user }}'
+        password: '{{ basic_auth_password }}'
+        owner: root
+        group: docker
+        mode: 0640
+    - name: create letsencrypt storage file
+      copy:
+        content: ''
+        dest: '{{ ansible_env.HOME }}/acme.json'
+        force: no
+        owner: root
+        group: root
+        mode: 0600
+    - name: create web network
+      docker_network:
+        name: web
+    - name: deploy traefik proxy container
+      docker_container:
+        name: traefik
+        image: traefik:2.4
+        published_ports:
+          - '0.0.0.0:80:80'
+          - '0.0.0.0:443:443'
+        volumes:
+          - '/var/run/docker.sock:/var/run/docker.sock'
+          - '{{ ansible_env.HOME }}/docker/proxy/traefik.toml:/traefik.toml'
+          - '{{ ansible_env.HOME }}/docker/proxy/htpasswd:/htpasswd'
+          - '{{ ansible_env.HOME }}/acme.json:/acme.json'
+        networks:
+          - name: web
+        restart_policy: unless-stopped
+        labels:
+          traefik.enable: 'true'
+          traefik.http.routers.dashboard.rule: 'Host(`{{ traefik_hostname }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))'
+          traefik.http.routers.dashboard.service: 'api@internal'
+          traefik.http.routers.dashboard.middlewares: 'dashboard_redirectscheme,dashboard_auth'
+          traefik.http.routers.dashboard.tls: 'true'
+          traefik.http.routers.dashboard.tls.certresolver: 'myresolver'
+          traefik.http.middlewares.dashboard_redirectscheme.redirectscheme.scheme: 'https'
+          traefik.http.middlewares.dashboard_redirectscheme.redirectscheme.permanent: 'true'
+          traefik.http.middlewares.dashboard_auth.basicauth.usersFile: '/htpasswd'

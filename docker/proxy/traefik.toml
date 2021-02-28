@@ -1,0 +1,28 @@
+defaultEntryPoints = ["http"]
+
+[entryPoints]
+[entryPoints.web]
+address = ":80"
+
+[entryPoints.websecure]
+address = ":443"
+
+[certificatesResolvers.myresolver.acme]
+email = "karl@kedrovsky.com"
+storage = "acme.json"
+# staging server
+# caServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+# production server
+caServer = "https://acme-v02.api.letsencrypt.org/directory"
+[certificatesResolvers.myresolver.acme.httpChallenge]
+entryPoint = "web"
+
+[api]
+dashboard = true
+debug = false
+insecure = false
+
+[providers.docker]
+exposedbydefault = false
+network = "web"
+watch = true
